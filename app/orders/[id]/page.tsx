@@ -95,7 +95,7 @@ export default function OrderConfirmationPage() {
       }
 
       // 查詢訂單項目
-      let orderItems = []
+      let orderItems: any[] = []
       try {
         const { data: items, error: itemsError } = await supabase
           .from("order_items")
@@ -333,3 +333,4 @@ export default function OrderConfirmationPage() {
     </div>
   )
 }
+
