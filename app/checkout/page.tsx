@@ -32,6 +32,7 @@ export default function CheckoutPage() {
   const router = useRouter()
   const { toast } = useToast()
   const [loading, setLoading] = useState(false)
+  const [profileLoading, setProfileLoading] = useState(true)
   const [user, setUser] = useState<any>(null)
   const [userProfile, setUserProfile] = useState<any>(null)
   const [couponCode, setCouponCode] = useState("")
@@ -41,6 +42,10 @@ export default function CheckoutPage() {
   const [remittanceLastFive, setRemittanceLastFive] = useState("")
   const [showSuccessDialog, setShowSuccessDialog] = useState(false)
   const [orderNumber, setOrderNumber] = useState("")
+  const [discountSettings, setDiscountSettings] = useState({
+    vip_discount_percentage: 10, // 預設值
+    vvip_discount_percentage: 20, // 預設值
+  })
   
   // 運費設定（可從環境變數或設定檔讀取）
   const SHIPPING_FEE = 150 // 預設運費 150 元
@@ -57,33 +62,76 @@ export default function CheckoutPage() {
 
   useEffect(() => {
     checkUser()
+    loadDiscountSettings()
   }, [])
 
-  async function checkUser() {
-    const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    setUser(user)
+  // 載入折扣設定
+  async function loadDiscountSettings() {
+    try {
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from("system_settings")
+        .select("setting_key, setting_value")
+        .in("setting_key", ["vip_discount_percentage", "vvip_discount_percentage"])
 
-    if (user) {
-      // 載入用戶資料
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", user.id)
-        .single()
-
-      if (profile) {
-        setUserProfile(profile)
-        setFormData({
-          customer_name: profile.full_name || "",
-          customer_email: profile.email || user.email || "",
-          customer_phone: profile.phone || "",
-          shipping_name: profile.full_name || "",
-          shipping_phone: profile.phone || "",
-          shipping_address: profile.address || "",
-          notes: "",
-        })
+      if (error) {
+        console.error("載入折扣設定失敗:", error)
+        return
       }
+
+      if (data) {
+        const settings = {
+          vip_discount_percentage: 10,
+          vvip_discount_percentage: 20,
+        }
+
+        data.forEach((item) => {
+          if (item.setting_key === "vip_discount_percentage") {
+            settings.vip_discount_percentage = parseFloat(item.setting_value) || 10
+          } else if (item.setting_key === "vvip_discount_percentage") {
+            settings.vvip_discount_percentage = parseFloat(item.setting_value) || 20
+          }
+        })
+
+        setDiscountSettings(settings)
+      }
+    } catch (error) {
+      console.error("載入折扣設定失敗:", error)
+    }
+  }
+
+  async function checkUser() {
+    setProfileLoading(true)
+    try {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      setUser(user)
+
+      if (user) {
+        // 載入用戶資料，包含 membership_level
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", user.id)
+          .single()
+
+        if (profile) {
+          setUserProfile(profile)
+          setFormData({
+            customer_name: profile.full_name || "",
+            customer_email: profile.email || user.email || "",
+            customer_phone: profile.phone || "",
+            shipping_name: profile.full_name || "",
+            shipping_phone: profile.phone || "",
+            shipping_address: profile.address || "",
+            notes: "",
+          })
+        }
+      }
+    } catch (error) {
+      console.error("載入用戶資料失敗:", error)
+    } finally {
+      setProfileLoading(false)
     }
   }
 
@@ -185,17 +233,70 @@ export default function CheckoutPage() {
 
   const calculateVIPDiscount = (baseSubtotal: number) => {
     if (!userProfile) return 0
-    const memberLevel = userProfile.member_level || userProfile.membership_level // 兼容舊欄位名稱
+    const memberLevel = userProfile.membership_level || userProfile.member_level // 優先使用 membership_level
     let discount = 0
-    if (memberLevel === "vip") {
-      // VIP 9 折優惠（折扣 10%）
-      discount = baseSubtotal * 0.1
-    } else if (memberLevel === "vvip") {
-      // VVIP 85 折優惠（折扣 15%）
-      discount = baseSubtotal * 0.15
+    if (memberLevel === "VIP") {
+      // VIP 折扣（從資料庫讀取百分比）
+      const discountPercentage = discountSettings.vip_discount_percentage / 100
+      discount = baseSubtotal * discountPercentage
+    } else if (memberLevel === "VVIP") {
+      // VVIP 折扣（從資料庫讀取百分比）
+      const discountPercentage = discountSettings.vvip_discount_percentage / 100
+      discount = baseSubtotal * discountPercentage
     }
+    // 一般會員或其他情況為原價（無折扣）
     // 確保折扣金額為整數
     return Math.round(discount)
+  }
+
+  // 取得會員等級顯示名稱
+  const getMembershipLevelDisplay = () => {
+    if (!userProfile) return null
+    const memberLevel = userProfile.membership_level || userProfile.member_level
+    if (memberLevel === "VVIP") return "VVIP"
+    if (memberLevel === "VIP") return "VIP"
+    return "一般會員"
+  }
+
+  // 取得會員折扣倍數
+  const getMembershipDiscountMultiplier = () => {
+    if (!userProfile) return 1.0
+    const memberLevel = userProfile.membership_level || userProfile.member_level
+    if (memberLevel === "VVIP") {
+      return 1 - discountSettings.vvip_discount_percentage / 100
+    }
+    if (memberLevel === "VIP") {
+      return 1 - discountSettings.vip_discount_percentage / 100
+    }
+    return 1.0
+  }
+
+  // 取得會員折扣百分比（用於顯示）
+  const getMembershipDiscountPercentage = () => {
+    if (!userProfile) return null
+    const memberLevel = userProfile.membership_level || userProfile.member_level
+    if (memberLevel === "VVIP") {
+      return discountSettings.vvip_discount_percentage
+    }
+    if (memberLevel === "VIP") {
+      return discountSettings.vip_discount_percentage
+    }
+    return null
+  }
+
+  // 取得會員折扣顯示文字（例如：8折、9折）
+  const getMembershipDiscountDisplay = () => {
+    if (!userProfile) return null
+    const memberLevel = userProfile.membership_level || userProfile.member_level
+    if (memberLevel === "VVIP") {
+      const multiplier = 1 - discountSettings.vvip_discount_percentage / 100
+      return `${Math.round(multiplier * 10)}折`
+    }
+    if (memberLevel === "VIP") {
+      const multiplier = 1 - discountSettings.vip_discount_percentage / 100
+      return `${Math.round(multiplier * 10)}折`
+    }
+    return null
   }
 
   const calculateShippingFee = () => {
@@ -207,7 +308,19 @@ export default function CheckoutPage() {
   }
 
   // 使用 useMemo 確保計算順序正確，避免 subtotal before initialization 錯誤
+  // 只有在 profile 載入完成後才計算金額
   const { subtotal, shippingFee, couponDiscount, vipDiscount, finalTotal } = useMemo(() => {
+    // 如果還在載入 profile，返回預設值
+    if (profileLoading) {
+      return {
+        subtotal: 0,
+        shippingFee: 0,
+        couponDiscount: 0,
+        vipDiscount: 0,
+        finalTotal: 0,
+      }
+    }
+
     // 先計算基礎金額（確保 totalPrice 是有效數字並整數化）
     const safeTotalPrice = Number(totalPrice) || 0
     const calculatedSubtotal = Math.round(safeTotalPrice)
@@ -231,7 +344,7 @@ export default function CheckoutPage() {
       finalTotal: calculatedFinalTotal,
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [totalPrice, appliedCoupon, userProfile])
+  }, [totalPrice, appliedCoupon, userProfile, profileLoading])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -586,14 +699,29 @@ export default function CheckoutPage() {
                         )}
                       </div>
 
+                      {/* 會員等級顯示 */}
+                      {!profileLoading && userProfile && (
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <span>會員等級：</span>
+                          <span className="font-medium text-foreground">{getMembershipLevelDisplay()}</span>
+                        </div>
+                      )}
+                      
                       {/* VIP/VVIP 折扣顯示 */}
-                      {userProfile && vipDiscount > 0 && (
+                      {!profileLoading && userProfile && vipDiscount > 0 && (
                         <div className="flex items-center gap-2 text-sm text-green-600 font-medium">
                           <CheckCircle2 className="h-4 w-4" />
                           <span>
-                            {(userProfile.member_level || userProfile.membership_level) === "vvip" 
-                              ? "VVIP 專屬優惠：85 折" 
-                              : "VIP 專屬優惠：9 折"}
+                            {(() => {
+                              const memberLevel = userProfile.membership_level || userProfile.member_level
+                              const discountDisplay = getMembershipDiscountDisplay()
+                              if (memberLevel === "VVIP") {
+                                return `已套用 VVIP ${discountDisplay}優惠，折扣 ${formatPrice(vipDiscount)}`
+                              } else if (memberLevel === "VIP") {
+                                return `已套用 VIP ${discountDisplay}優惠，折扣 ${formatPrice(vipDiscount)}`
+                              }
+                              return ""
+                            })()}
                           </span>
                         </div>
                       )}
@@ -607,11 +735,16 @@ export default function CheckoutPage() {
                       )}
 
                       {/* 金額明細 */}
-                      <div className="pt-4 space-y-2 text-sm">
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">小計</span>
-                          <span>{formatPrice(subtotal)}</span>
+                      {profileLoading ? (
+                        <div className="pt-4 space-y-2 text-sm text-center text-muted-foreground">
+                          載入中...
                         </div>
+                      ) : (
+                        <div className="pt-4 space-y-2 text-sm">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">小計</span>
+                            <span>{formatPrice(subtotal)}</span>
+                          </div>
                         <div className="flex justify-between">
                           <span className="text-muted-foreground">運費</span>
                           <span className={shippingFee === 0 ? "text-green-600 line-through" : ""}>
@@ -624,9 +757,17 @@ export default function CheckoutPage() {
                             <span>-{formatPrice(couponDiscount)}</span>
                           </div>
                         )}
-                        {vipDiscount > 0 && (
+                        {!profileLoading && vipDiscount > 0 && (
                           <div className="flex justify-between text-green-600 font-medium">
-                            <span>{(userProfile?.member_level || userProfile?.membership_level) === "vvip" ? "VVIP 專屬優惠" : "VIP 專屬優惠"}</span>
+                            <span>
+                              {(() => {
+                                const memberLevel = userProfile?.membership_level || userProfile?.member_level
+                                const discountDisplay = getMembershipDiscountDisplay()
+                                if (memberLevel === "VVIP") return `VVIP ${discountDisplay}優惠`
+                                if (memberLevel === "VIP") return `VIP ${discountDisplay}優惠`
+                                return "會員優惠"
+                              })()}
+                            </span>
                             <span>-{formatPrice(vipDiscount)}</span>
                           </div>
                         )}
@@ -635,6 +776,7 @@ export default function CheckoutPage() {
                           <span>{formatPrice(finalTotal)}</span>
                         </div>
                       </div>
+                      )}
 
                       <Button type="submit" className="w-full" size="lg" disabled={loading}>
                         {loading ? "處理中..." : "確認訂單"}

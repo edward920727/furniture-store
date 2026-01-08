@@ -1,5 +1,8 @@
+"use client"
+
 import { AdminSidebar } from "@/components/admin/admin-sidebar"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { SettingsManagement } from "@/components/admin/settings-management"
 
 export default function AdminSettingsPage() {
   return (
@@ -13,15 +16,7 @@ export default function AdminSettingsPage() {
               <p className="text-muted-foreground mt-2">管理系統設定</p>
             </div>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>系統設定</CardTitle>
-                <CardDescription>管理您的系統配置</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <p className="text-muted-foreground">設定功能開發中...</p>
-              </CardContent>
-            </Card>
+            <SettingsManagement />
           </div>
         </main>
       </div>
