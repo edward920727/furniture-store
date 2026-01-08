@@ -329,7 +329,7 @@ export default function CheckoutPage() {
       if (appliedCoupon) {
         await supabase
           .from("coupons")
-          .update({ used_count: (appliedCoupon.used_count || 0) + 1 })
+          .update({ used_count: ((appliedCoupon as any).used_count || 0) + 1 })
           .eq("id", appliedCoupon.id)
       }
 
