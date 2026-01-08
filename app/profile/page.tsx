@@ -203,7 +203,7 @@ export default function ProfilePage() {
       // 手動關聯查詢訂單項目
       const ordersWithItems = await Promise.all(
         ordersData.map(async (order) => {
-          let orderItems = []
+          let orderItems: any[] = []
           try {
             const { data: items, error: itemsError } = await supabase
               .from("order_items")
@@ -720,3 +720,5 @@ function RemittanceInput({
     </div>
   )
 }
+
+
