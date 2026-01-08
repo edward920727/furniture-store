@@ -327,10 +327,10 @@ export default function CheckoutPage() {
 
       // 如果使用了優惠碼，更新使用次數
       if (appliedCoupon) {
-        //await supabase
-         //.from("coupons")
-          //.update({ used_count: (appliedCoupon.used_count || 0) + 1 })
-          //.eq("id", appliedCoupon.id)
+        await supabase
+          .from("coupons")
+          .update({ used_count: (appliedCoupon.used_count || 0) + 1 })
+          .eq("id", appliedCoupon.id)
       }
 
       // 設置訂單編號並顯示成功對話框
@@ -694,4 +694,3 @@ export default function CheckoutPage() {
     </div>
   )
 }
-
